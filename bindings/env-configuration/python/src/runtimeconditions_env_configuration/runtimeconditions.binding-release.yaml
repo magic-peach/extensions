@@ -31,7 +31,7 @@ package:
 packageDependencies:
     - artifact:
         kind: python-wheel
-        sha256: 57c8987fc37a57ac401afb44fc94b05ea4df50e394140dc7955881ca8d6b3cbc
+        sha256: 615c95f254c578a444233cbe6cdd2b00578d78b908ddc456c53aebf40f61b7ea
       compatibleVersionRange:
         minimumInclusive: 0.1.0
         nextBreakingExclusive: 0.2.0
@@ -44,7 +44,7 @@ provenance:
     orchestrator:
         name: rc
         version: 0.1.0
-        sha256: 51d6ecf0814a42d3ba4dd2c642766ac4738a12d27fae365266f6a8cde6bff656
+        sha256: fc414ae0c39353134f066021cf8965d02fa7846f9c1a1ff59e700c4b3befd174
     profiler:
         name: python-rc-profiler
         version: 0.4.0
