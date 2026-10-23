@@ -114,3 +114,18 @@ func TestTemporaryWorkspaceIsLazyAndCleaned(t *testing.T) {
 		t.Fatal("explicit workspace not retained")
 	}
 }
+
+func TestWithPathDependenciesRewritesOnlyNamedCrates(t *testing.T) {
+	input := "[package]\nname = \"consumer\"\n\n[dependencies]\nprovider = \">=0.1.0, <0.2.0\"\nserde_json = \"1\"\n"
+	want := "[package]\nname = \"consumer\"\n\n[dependencies]\nprovider = { version = \">=0.1.0, <0.2.0\", path = \"/stage/provider\" }\nserde_json = \"1\"\n"
+	if got := withPathDependencies(input, map[string]string{"provider": "/stage/provider"}); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestRustResourcesLiveBesideTheManifest(t *testing.T) {
+	bt := &BuiltTarget{Directory: "/package", Target: Target{Language: "rust"}}
+	if got := resourceDir(bt); got != "/package/runtimeconditions" {
+		t.Fatalf("resource directory %q", got)
+	}
+}
