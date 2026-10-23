@@ -66,6 +66,7 @@ pub struct B {
     pub raw: BTreeMap<String, Raw>,
     pub defs: HashMap<(String, String), String>,
     pub used: BTreeSet<String>,
+    pub resolved: HashMap<String, Ty>,
     pub any: bool,
 }
 
@@ -319,7 +320,27 @@ pub fn build(m: &Value, t: &Value) -> R<Plan> {
         }
         for k in need {
             let (d, sc) = pending.remove(&k).unwrap();
-            b.reg(&d["shape"], &k, s(d, "name"), &sc, None, None)?;
+            let ty = b.reg(&d["shape"], &k, s(d, "name"), &sc, None, None)?;
+            if !b.raw.contains_key(&k) {
+                b.resolved.insert(k, ty);
+            }
+        }
+    }
+    let keys: HashSet<String> = b.raw.keys().cloned().collect();
+    for r in b.raw.values_mut() {
+        match &mut r.body {
+            Body::Obj(fs) => {
+                for f in fs {
+                    f.ty = subst(&f.ty, &b.resolved, &keys, 0)?;
+                }
+            }
+            Body::Arr(t) | Body::Map(t) => *t = subst(t, &b.resolved, &keys, 0)?,
+            Body::Uni(vs) => {
+                for v in vs {
+                    *v = subst(v, &b.resolved, &keys, 0)?;
+                }
+            }
+            Body::Enm(_) => {}
         }
     }
     let names = allocate(pkg, &b.syms)?;
@@ -353,4 +374,15 @@ pub fn boxed(raw: &BTreeMap<String, Raw>) -> HashSet<(String, String)> {
         }
     }
     out
+}
+
+fn subst(t: &Ty, resolved: &HashMap<String, Ty>, keys: &HashSet<String>, depth: usize) -> R<Ty> {
+    match t {
+        Ty::Named(k) if !keys.contains(k) => match resolved.get(k) {
+            Some(next) if depth < 64 => subst(next, resolved, keys, depth + 1),
+            Some(_) => Err(e("RCR1012", k, "circular reference chain")),
+            None => Err(e("RCR1012", k, "unresolved reference")),
+        },
+        _ => Ok(t.clone()),
+    }
 }

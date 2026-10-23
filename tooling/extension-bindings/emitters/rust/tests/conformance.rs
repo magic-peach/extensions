@@ -492,3 +492,36 @@ fn diagnostics_are_structured_with_json_pointers() {
     assert_eq!(d["error"]["jsonPointer"], "/metadata/semanticSha256");
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn scalar_and_chained_definitions_resolve_to_their_types() {
+    let validator = jsonschema::validator_for(&yaml(&root().join("runtimeconditions.binding-manifest.schema.yaml"))).unwrap();
+    let mut model = yaml(&root().join("conformance/expected/01-owned-kind-interface/runtimeconditions.binding-model.yaml"));
+    let coordinate = model["schemas"][0]["coordinate"].as_str().unwrap().to_string();
+    let base = model["schemas"][0]["projection"]["properties"][1]["shape"]["provenance"].clone();
+    let at = |pointer: &str| {
+        let mut p = base.clone();
+        p["jsonPointer"] = pointer.into();
+        p
+    };
+    let definition = |name: &str, shape: Value| serde_json::json!({"name": name, "jsonPointer": format!("/$defs/{name}"), "shape": shape, "provenance": at(&format!("/$defs/{name}"))});
+    let reference = |name: &str| serde_json::json!({"kind": "ref", "ref": format!("#/$defs/{name}"), "provenance": {"owner": base["owner"], "extensionSha256": base["extensionSha256"], "coordinate": coordinate, "jsonPointer": "/properties/region"}});
+    model["schemas"][0]["definitions"] = serde_json::json!([
+        definition("label", serde_json::json!({"kind": "scalar", "scalar": "string", "provenance": at("/$defs/label")})),
+        definition("alias", reference("label")),
+        definition("blob", serde_json::json!({"kind": "any", "provenance": at("/$defs/blob")})),
+    ]);
+    for root in ["schemas", "scopes"] {
+        let props = model[root][0]["projection"]["properties"].as_array_mut().unwrap();
+        props.iter_mut().find(|p| p["name"] == "region").unwrap()["shape"] = reference("alias");
+    }
+    model["schemas"][0]["projection"]["properties"].as_array_mut().unwrap().iter_mut().find(|p| p["name"] == "interface").unwrap()["shape"]["properties"][0]["shape"] = reference("blob");
+    let dir = scratch("scalar-definitions-model");
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("model.yaml");
+    fs::write(&path, serde_yaml::to_string(&model).unwrap()).unwrap();
+    let src = check_model("scalar-definitions", &path, &validator);
+    assert!(src.contains("pub value: String"), "{src}");
+    assert!(src.contains("serde_json::Value"), "{src}");
+    let _ = fs::remove_dir_all(&dir);
+}
