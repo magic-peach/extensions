@@ -4,6 +4,18 @@ use std::{env, fs};
 use crate::common::*;
 use crate::diag::*;
 
+pub const MAX_BYTES: u64 = 64 << 20;
+
+pub fn read_limited(path: &str) -> R<String> {
+    use std::io::Read;
+    let mut buf = Vec::new();
+    fs::File::open(path).and_then(|f| f.take(MAX_BYTES + 1).read_to_end(&mut buf)).map_err(|x| e("RCR1001", path, x))?;
+    if buf.len() as u64 > MAX_BYTES {
+        return Err(e("RCR1001", path, "exceeds the size limit"));
+    }
+    String::from_utf8(buf).map_err(|_| e("RCR1002", path, "must be UTF-8"))
+}
+
 pub fn semver(v: &str) -> Option<(u64, u64, u64)> {
     let (core, pre) = v.split_once('-').map_or((v, None), |(c, p)| (c, Some(p)));
     let ok = |x: &str| !x.is_empty() && x.bytes().all(|b| b.is_ascii_digit()) && (x == "0" || !x.starts_with('0'));
@@ -18,7 +30,7 @@ pub fn semver(v: &str) -> Option<(u64, u64, u64)> {
 }
 
 pub fn load_target(p: &str) -> R<Value> {
-    let t = strict(&fs::read_to_string(p).map_err(|x| e("RCR1001", p, x))?, p)?;
+    let t = strict(&read_limited(p)?, p)?;
     let k = s(&t, "packageKey");
     let bad = |f: &str, m: &str| ep("RCR1006", k, &format!("/{f}"), m);
     if s(&t, "apiVersion") != "runtimeconditions.io/rust-package-target/v1alpha1" || s(&t, "kind") != "RuntimeConditionsRustPackageTarget" {
@@ -65,7 +77,7 @@ pub fn load_target(p: &str) -> R<Value> {
 
 pub fn strict(text: &str, at: &str) -> R<Value> {
     let bad = |m: &str| e("RCR1002", at, m);
-    if text.len() > 8 << 20 {
+    if text.len() as u64 > MAX_BYTES {
         return Err(e("RCR1001", at, "exceeds the size limit"));
     }
     if text.starts_with('\u{feff}') || text.contains('\r') || !text.ends_with('\n') || text.ends_with("\n\n") {
@@ -116,7 +128,7 @@ pub fn strict(text: &str, at: &str) -> R<Value> {
 
 pub fn validate(m: &Value, at: &str) -> R<()> {
     let text = match env::var("RC_BINDING_MODEL_SCHEMA") {
-        Ok(p) => fs::read_to_string(&p).map_err(|x| e("RCR1001", &p, x))?,
+        Ok(p) => read_limited(&p)?,
         Err(_) => include_str!("../../../model/runtimeconditions.binding-model.schema.yaml").into(),
     };
     let schema: Value = serde_yaml::from_str(&text).map_err(|x| e("RCR1003", at, x))?;

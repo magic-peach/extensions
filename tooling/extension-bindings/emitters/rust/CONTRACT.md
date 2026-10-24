@@ -66,24 +66,27 @@ comment.
 
 1. Every owned kind becomes one function `kind(&[&dyn KindField]) -> Declaration`.
    `Declaration` is an inert tuple struct with a private field.
-2. `KindField` is a trait whose only method is `rc_marker_<16 hex digits>`,
+2. A crate that imports marker traits re-exports them from `bindings.rs` with `pub use`, so a
+   consumer that depends only on the middle package of a chain can import a trait owned by a
+   package further down.
+3. `KindField` is a trait whose only method is `rc_marker_<16 hex digits>`,
    derived from the owner and declaration coordinate. Every applicable struct
    implements it, so a field belonging to another kind does not compile.
    Cross-package additive fields implement the provider's trait, imported with
    `use <crate>::<Trait>`.
-3. Objects become structs with public fields, required fields first. An
+4. Objects become structs with public fields, required fields first. An
    optional field is `Option<T>`. The emitter does not add constructors or
    builders.
-4. Scalars map to `String`, `bool`, `i64`, `f64`, `()` for JSON null, and
+5. Scalars map to `String`, `bool`, `i64`, `f64`, `()` for JSON null, and
    `serde_json::Value` for any JSON value.
-5. Arrays and maps become tuple structs around `Vec<T>` and
+6. Arrays and maps become tuple structs around `Vec<T>` and
    `BTreeMap<String, T>`. Named wrappers keep recursive shapes expressible.
-6. Unions become enums with variants `Variant1`, `Variant2`, ...
-7. String value domains become enums whose variants are Pascal case and whose
+7. Unions become enums with variants `Variant1`, `Variant2`, ...
+8. String value domains become enums whose variants are Pascal case and whose
    `value()` returns the serialized string.
-8. A direct reference is boxed only when it lies on a cycle of direct references.
+9. A direct reference is boxed only when it lies on a cycle of direct references.
    References through `Vec` and `BTreeMap` already have a finite size.
-9. Every type, field, and value carries a doc comment naming its source and the
+10. Every type, field, and value carries a doc comment naming its source and the
    coordinate and JSON Pointer it was generated from.
 
 Source names are NFKC-normalized before they are split into words. Types and traits
@@ -132,7 +135,8 @@ use the provenance coordinate and JSON Pointer.
 
 The model and target are read as UTF-8 without BOM, LF line endings, one
 trailing newline, no comments, anchors, aliases, or tags, string mapping keys
-only, no duplicate keys, finite numbers, and bounded size, node count, and depth.
+only, no duplicate keys, finite numbers, and bounded size, node count, and depth. At most
+64 MiB plus one byte of a file is read before it is rejected.
 The model is then validated against
 `model/runtimeconditions.binding-model.schema.yaml`, embedded at build time;
 `RC_BINDING_MODEL_SCHEMA` overrides it.
@@ -154,6 +158,9 @@ Tampered output and invalid inputs must fail with the codes above.
 `languageVersion` the exact Rust release; `publicationMode` is `github-tag`
 until a registry workflow exists.
 
+- The emitter's version is the crate version in `Cargo.toml`, reported by `--version`. Its
+  identity digest hashes `Cargo.toml`, `Cargo.lock`, the target schema, and `src/*.rs`, not the
+  binary, so every platform records the same `emitterSha256` and regenerating is reproducible.
 - Assembly writes the model, extension, and release resources into
   `runtimeconditions/` and the file manifest at the crate root. `verify`
   ignores exactly those four files.

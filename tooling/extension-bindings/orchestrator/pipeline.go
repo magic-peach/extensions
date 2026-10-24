@@ -20,7 +20,6 @@ import (
 )
 
 const rustEmitterName = "runtimeconditions-binding-emitter-rust"
-const rustEmitterVersion = "0.1.0"
 
 type Document struct {
 	Closure     normalizer.ResolvedClosure
@@ -258,7 +257,15 @@ func (p *Pipeline) tool(key string) (string, Tool, error) {
 		identity.Version = goemitter.EmitterVersion
 	case "rust-emitter":
 		identity.Name = rustEmitterName
-		identity.Version = rustEmitterVersion
+		reported, err := p.run(p.Project.Root, nil, path, "--version")
+		if err != nil {
+			return "", Tool{}, err
+		}
+		identity.Version = strings.TrimSpace(string(reported))
+		identity.SHA256, err = rustEmitterSourceDigest(filepath.Join(p.Project.ToolingDirectory, "emitters", "rust"))
+		if err != nil {
+			return "", Tool{}, err
+		}
 	case "go-profiler":
 		identity.Name = "go-rc-profiler"
 		info, err := buildinfo.ReadFile(path)
@@ -974,4 +981,28 @@ func (p *Pipeline) LoadBuild(plan BuildPlan, input string) (*Build, error) {
 		bt.PackageConfig = config
 	}
 	return build, nil
+}
+
+func rustEmitterSourceDigest(directory string) (string, error) {
+	names := []string{"Cargo.toml", "Cargo.lock", "package-target.schema.yaml"}
+	sources, err := filepath.Glob(filepath.Join(directory, "src", "*.rs"))
+	if err != nil {
+		return "", err
+	}
+	for _, source := range sources {
+		names = append(names, "src/"+filepath.Base(source))
+	}
+	digests := map[string]string{}
+	for _, name := range names {
+		data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(name)))
+		if err != nil {
+			return "", err
+		}
+		digests[name] = normalizer.SHA256Hex(data)
+	}
+	encoded, err := json.Marshal(digests)
+	if err != nil {
+		return "", err
+	}
+	return normalizer.SHA256Hex(encoded), nil
 }

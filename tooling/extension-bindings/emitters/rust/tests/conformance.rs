@@ -525,3 +525,80 @@ fn scalar_and_chained_definitions_resolve_to_their_types() {
     assert!(src.contains("serde_json::Value"), "{src}");
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn oversized_inputs_are_rejected_before_they_are_read_into_memory() {
+    let dir = scratch("oversized");
+    fs::create_dir_all(&dir).unwrap();
+    let (key, model) = models().remove(0);
+    let config = target(&yaml(&model), &key, &dir);
+    let big = dir.join("big.yaml");
+    fs::File::create(&big).unwrap().set_len((64 << 20) + 1).unwrap();
+    let out = dir.join("out");
+    let r = bin(&["emit", "--model", big.to_str().unwrap(), "--package-config", config.to_str().unwrap(), "--output", out.to_str().unwrap()]);
+    assert!(!r.status.success());
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert!(stderr.starts_with("RCR1001 "), "{stderr}");
+    assert!(stderr.contains("exceeds the size limit"), "{stderr}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn transitive_markers_compile_through_the_middle_crate() {
+    let model = yaml(&root().join("conformance/expected/03-transitive-closure/runtimeconditions.binding-model.yaml"));
+    let root_id = model["rootExtension"]["id"].as_str().unwrap().to_string();
+    let leaf_id = model["vocabulary"]["importedDeclarations"][0]["owner"].as_str().unwrap().to_string();
+    let extensions = model["extensions"].as_array().unwrap();
+    let extension = |id: &str| extensions.iter().find(|x| x["id"] == id).unwrap().clone();
+    let middle_id = extensions.iter().find(|x| x["dependencies"].as_array().is_some_and(|d| d.iter().any(|y| *y == leaf_id.as_str()))).unwrap()["id"].as_str().unwrap().to_string();
+    let identity = |id: &str| {
+        let e = extension(id);
+        serde_json::json!({"id": e["id"], "version": e["version"], "semanticSha256": e["semanticSha256"]})
+    };
+
+    let mut leaf = model.clone();
+    leaf["rootExtension"] = identity(&leaf_id);
+    leaf["extensions"] = serde_json::json!([extension(&leaf_id)]);
+    leaf["vocabulary"]["ownedDeclarations"] = model["vocabulary"]["importedDeclarations"].clone();
+    leaf["vocabulary"]["importedDeclarations"] = serde_json::json!([]);
+    let mut middle = model.clone();
+    middle["rootExtension"] = identity(&middle_id);
+    middle["extensions"] = serde_json::json!([extension(&leaf_id), extension(&middle_id)]);
+    middle["vocabulary"]["ownedDeclarations"] = serde_json::json!([]);
+
+    let dir = scratch("transitive-chain");
+    fs::create_dir_all(&dir).unwrap();
+    let packages = [("leaf", &leaf, &leaf_id, None), ("middle", &middle, &middle_id, Some(("leaf", &leaf_id))), ("root", &model, &root_id, Some(("middle", &middle_id)))];
+    for (name, m, id, dependency) in packages {
+        let dependencies: Vec<Value> = dependency.iter().map(|(crate_name, extension)| serde_json::json!({"extension": extension, "crateName": format!("rc-chain-{crate_name}"), "version": "1.0.0"})).collect();
+        let config = serde_json::json!({
+            "apiVersion": "runtimeconditions.io/rust-package-target/v1alpha1", "kind": "RuntimeConditionsRustPackageTarget",
+            "packageKey": format!("chain-{name}"), "rootExtension": id, "crateName": format!("rc-chain-{name}"), "version": "1.0.0",
+            "sourceDirectory": format!("bindings/chain-{name}/rust"), "minimumRustVersion": "1.75", "publicationMode": "github-tag",
+            "repositoryUrl": "https://github.com/runtimeconditions/extensions", "emitterSha256": "0".repeat(64), "dependencies": dependencies,
+        });
+        let (model_path, config_path, out) = (dir.join(format!("{name}.model.yaml")), dir.join(format!("{name}.target.yaml")), dir.join(name));
+        fs::write(&model_path, serde_yaml::to_string(m).unwrap()).unwrap();
+        fs::write(&config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+        let r = bin(&["emit", "--model", model_path.to_str().unwrap(), "--package-config", config_path.to_str().unwrap(), "--output", out.to_str().unwrap()]);
+        assert!(r.status.success(), "{name}: {}", String::from_utf8_lossy(&r.stderr));
+        let manifest = out.join("Cargo.toml");
+        let text = fs::read_to_string(&manifest).unwrap();
+        let rewritten: String = text
+            .lines()
+            .map(|line| match line.strip_prefix("rc-chain-").and_then(|l| l.split_once(" = ")) {
+                Some((dep, req)) => format!("rc-chain-{dep} = {{ version = {req}, path = {:?} }}\n", dir.join(dep)),
+                None => format!("{line}\n"),
+            })
+            .collect();
+        fs::write(&manifest, rewritten).unwrap();
+    }
+    let middle_facade = fs::read_to_string(dir.join("middle/src/bindings.rs")).unwrap();
+    assert!(middle_facade.contains("pub use rc_chain_leaf::WorkerField;"), "{middle_facade}");
+    let target = env::temp_dir().join(format!("rc-rust-emitter-target-{}", std::process::id()));
+    for name in ["leaf", "middle", "root"] {
+        let r = cargo(&["check"], &dir.join(name).join("Cargo.toml"), &target);
+        assert!(r.status.success(), "{name}: {}", String::from_utf8_lossy(&r.stderr));
+    }
+    let _ = fs::remove_dir_all(&dir);
+}

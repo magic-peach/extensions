@@ -4,7 +4,7 @@ use crate::diag::*;
 
 pub const NAME: &str = "runtimeconditions-binding-emitter-rust";
 
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MANIFEST: &str = "runtimeconditions/runtimeconditions.bindings.yaml";
 

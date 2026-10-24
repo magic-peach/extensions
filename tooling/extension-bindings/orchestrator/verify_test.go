@@ -129,3 +129,31 @@ func TestRustResourcesLiveBesideTheManifest(t *testing.T) {
 		t.Fatalf("resource directory %q", got)
 	}
 }
+
+func TestRustEmitterSourceDigestTracksSourceNotBuilds(t *testing.T) {
+	directory := t.TempDir()
+	write := func(name, content string) {
+		path := filepath.Join(directory, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, content := range map[string]string{"Cargo.toml": "a", "Cargo.lock": "b", "package-target.schema.yaml": "c", "src/main.rs": "d", "src/plan.rs": "e"} {
+		write(name, content)
+	}
+	first, err := rustEmitterSourceDigest(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("target/release/runtimeconditions-binding-emitter-rust", "a binary")
+	if again, _ := rustEmitterSourceDigest(directory); again != first {
+		t.Fatal("build output must not change the digest")
+	}
+	write("src/plan.rs", "changed")
+	if changed, _ := rustEmitterSourceDigest(directory); changed == first {
+		t.Fatal("a source change must change the digest")
+	}
+}

@@ -148,7 +148,8 @@ pub fn render(m: &Value, t: &Value, p: &Plan) -> R<BTreeMap<String, String>> {
         facade += &format!("mod {ident};\n");
         exports += &format!("pub use {ident}::{nm};\n");
     }
-    facade += &format!("\n{exports}");
+    let reexports: BTreeSet<String> = p.imps.iter().map(|i| format!("pub use {}::{};\n", i.krate.replace('-', "_"), n[&i.proto])).collect();
+    facade += &format!("\n{exports}{}", reexports.into_iter().collect::<String>());
     if !p.decls.is_empty() {
         facade += "\n/// An inert value returned by the declaration functions.\n#[derive(Clone, Debug, PartialEq)]\npub struct Declaration(());\n";
     }

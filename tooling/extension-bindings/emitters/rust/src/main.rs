@@ -38,7 +38,7 @@ fn run(a: &[String]) -> R<String> {
         return Ok(json!({"api": api(&have)?}).to_string());
     }
     let (mp, tp) = (need("--model")?, need("--package-config")?);
-    let m = strict(&fs::read_to_string(mp).map_err(|x| e("RCR1001", mp, x))?, mp)?;
+    let m = strict(&read_limited(mp)?, mp)?;
     if s(&m, "apiVersion") != "runtimeconditions.io/binding-model/v1alpha1" {
         return Err(e("RCR1004", mp, "unsupported binding-model apiVersion"));
     }
