@@ -1,4 +1,4 @@
-name: Publish Rust bindings
+name: Publish Rust bindings (placeholder, publishes nothing)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         type: string
         default: ''
       dry_run:
-        description: 'Verify publication without pushing to crates.io'
+        description: 'Must stay true until crates.io publication is implemented'
         type: boolean
         default: true
 
@@ -26,11 +26,18 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Publish to crates.io (placeholder)
+      - name: Report placeholder status
         env:
           TARGETS: ${{ inputs.targets }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          echo "crates.io publication is not implemented; no package was published."
-          echo "targets=${TARGETS:-<none>} dry_run=${DRY_RUN}"
+          if [ "${DRY_RUN}" != "true" ]; then
+            echo "::error::crates.io publication is not implemented; rerun with dry_run enabled."
+            exit 1
+          fi
+          {
+            echo "### Placeholder: nothing was verified or published"
+            echo "crates.io publication is not implemented. No package was verified, built, or pushed."
+            echo "targets: \`${TARGETS:-none}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

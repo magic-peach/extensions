@@ -288,6 +288,21 @@ fn check_model(key: &str, model: &Path, validator: &jsonschema::Validator) -> St
     fs::write(outs[1].join("src/bindings.rs"), read(&outs[1], "src/bindings.rs") + "pub fn extra() {}\n").unwrap();
     let bad = bin(&["verify", "--model", m, "--package-config", t, "--input", outs[1].to_str().unwrap()]);
     assert!(!bad.status.success(), "{key}: tampered output accepted");
+    let manifest_path = outs[1].join("Cargo.toml");
+    let cargo_toml = read(&outs[1], "Cargo.toml");
+    let tamper = |bytes: Option<String>| {
+        match bytes {
+            Some(b) => fs::write(&manifest_path, b).unwrap(),
+            None => fs::remove_file(&manifest_path).unwrap(),
+        }
+        let r = bin(&["verify", "--model", m, "--package-config", t, "--input", outs[1].to_str().unwrap()]);
+        assert!(String::from_utf8_lossy(&r.stderr).starts_with("RCR4002 "), "{key}: {}", String::from_utf8_lossy(&r.stderr));
+    };
+    tamper(None);
+    tamper(Some(cargo_toml.replacen("version = \"", "version = \"9", 1)));
+    tamper(Some(cargo_toml.replacen("edition = \"2021\"", "edition = \"2018\"", 1)));
+    tamper(Some(cargo_toml.lines().filter(|l| !l.contains("rust-version")).collect::<Vec<_>>().join("\n") + "\n"));
+    tamper(Some(cargo_toml.clone() + "extra = \"1\"\n"));
     let again = bin(&["emit", "--model", m, "--package-config", t, "--output", o0]);
     assert!(String::from_utf8_lossy(&again.stderr).contains("RCR3001"));
     if !read(&outs[0], "Cargo.toml").contains("rc-dep-") {
