@@ -3,6 +3,7 @@
 Runtime Conditions is a portable declaration of what one workload needs from outside itself, such as APIs, datastores, caches, and configuration, without the actual values. This repository defines the vocabulary that Runtime Conditions profiles use, and generates code packages so developers can declare those needs in code.
 
 Start here: https://runtimeconditions.github.io/
+To learn more about the language we use in this project, check out the [glossary](GLOSSARY.md).
 
 ## How it fits together
 
